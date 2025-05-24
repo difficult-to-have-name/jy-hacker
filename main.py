@@ -304,4 +304,4 @@ if __name__ == '__main__':
     print("Your IP: ", get_localhost())
     ADDR = ("10.165.43.52", 4705)  # edit this test ip before
     send = Target(ADDR)
-    send.new_powershell("asdf", "-NoExit")
+    send.new_powershell("Write-Output You are hacked!", "-NoExit")
