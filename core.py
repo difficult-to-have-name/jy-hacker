@@ -1,5 +1,3 @@
-# todo: edit the type hint to adapt lower Python versions.
-
 import logging
 import os
 import re
@@ -7,7 +5,7 @@ import socket
 import sys
 import time
 from dataclasses import dataclass
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 logger = logging.getLogger("my_jiyu_killer")
 logger.setLevel(logging.DEBUG)
@@ -190,7 +188,7 @@ class Target:
         self._safe_sendto(Payload.WINDOWED, self.address)
         logger.info(f"WINDOWED -> {self.address[0]}:{self.address[1]}")
 
-    def msg(self, content: str = "") -> None:
+    def msg(self, content: str) -> None:
         """
         发送教师端消息（即以教师的口吻）。
         :param content: 消息内容
@@ -223,7 +221,7 @@ class Target:
         self._safe_sendto(packet, self.address)
         logger.debug(f"RAW: {executable} {args} -> {self.address[0]}:{self.address[1]}")
 
-    def cmd(self, command: str, arg: str | None = None) -> None:
+    def cmd(self, command: str, arg: Optional[str] = None) -> None:
         """
         构造命令提示符命令并发送。
         :param command: 命令
@@ -234,7 +232,7 @@ class Target:
         self.raw(executable, args)
         logger.info(f"CMD: {command} {args} -> {self.address[0]}:{self.address[1]}")
 
-    def powershell(self, command: str, arg: str | None = None) -> None:
+    def powershell(self, command: str, arg: Optional[str] = None) -> None:
         """构造 Powershell 命令并发送。
         :param command: 命令
         :param arg: 传递给 powershell.exe 的其他命令行参数（如 -NoExit 使得 powershell.exe 执行后保留界面）
